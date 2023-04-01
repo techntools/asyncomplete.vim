@@ -304,7 +304,7 @@ function! s:on_change() abort
     endfor
 
     call s:trigger(l:ctx)
-    call s:update_pum()
+    call s:recompute_pum()
 endfunction
 
 function! s:trigger(ctx) abort
@@ -331,31 +331,19 @@ function! asyncomplete#complete(name, ctx, startcol, items, ...) abort
     let l:ctx = asyncomplete#context()
     if !has_key(s:matches, a:name) || l:ctx['lnum'] != a:ctx['lnum'] " TODO: handle more context changes
         call asyncomplete#log('core', 'asyncomplete#log', 'ignoring due to context chnages', a:name, a:ctx, a:startcol, l:refresh, a:items)
-        call s:update_pum()
+        call s:recompute_pum()
         return
     endif
 
     call asyncomplete#log('asyncomplete#complete', a:name, a:ctx, a:startcol, l:refresh, a:items)
 
     let l:matches = s:matches[a:name]
-    let l:matches['items'] = s:normalize_items(a:items)
+    let l:matches['items'] = a:items
     let l:matches['refresh'] = l:refresh
     let l:matches['startcol'] = a:startcol
     let l:matches['status'] = 'success'
 
-    call s:update_pum()
-endfunction
-
-function! s:normalize_items(items) abort
-    if len(a:items) > 0 && type(a:items[0]) ==# type('')
-        let l:items = []
-        for l:item in a:items
-            let l:items += [{'word': l:item }]
-        endfor
-        return l:items
-    else
-        return a:items
-    endif
+    call s:recompute_pum()
 endfunction
 
 function! asyncomplete#force_refresh() abort
@@ -382,17 +370,8 @@ function! asyncomplete#_force_refresh() abort
     endfor
 
     call s:trigger(l:ctx)
-    call s:update_pum()
+    call s:recompute_pum()
     return ''
-endfunction
-
-function! s:update_pum() abort
-    if exists('s:update_pum_timer')
-        call timer_stop(s:update_pum_timer)
-        unlet s:update_pum_timer
-    endif
-    call asyncomplete#log('core', 's:update_pum')
-    let s:update_pum_timer = timer_start(g:asyncomplete_popup_delay, function('s:recompute_pum'))
 endfunction
 
 function! s:recompute_pum(...) abort
