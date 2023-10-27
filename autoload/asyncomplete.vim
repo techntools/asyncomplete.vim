@@ -251,29 +251,11 @@ function! asyncomplete#cancel_popup() abort
   return pumvisible() ? "\<C-e>" : ''
 endfunction
 
-function! s:get_min_chars(source_name) abort
-  if exists('b:asyncomplete_min_chars')
-    return b:asyncomplete_min_chars
-  elseif has_key(s:sources, a:source_name)
-    return get(s:sources[a:source_name], 'min_chars', g:asyncomplete_min_chars)
-  endif
-  return g:asyncomplete_min_chars
-endfunction
-
 function! s:on_change() abort
-    if s:should_skip() | return | endif
-
-    if !g:asyncomplete_auto_popup
-        return
-    endif
+    if mode() isnot# 'i' || !get(b:, 'asyncomplete_enable', 0) | return | endif
 
     let l:ctx = asyncomplete#context()
     let l:last_char = l:ctx['typed'][l:ctx['col'] - 2] " col is 1-indexed, but str 0-indexed
-    if exists('b:asyncomplete_triggers')
-        let l:triggered_sources = get(b:asyncomplete_triggers, l:last_char, {})
-    else
-        let l:triggered_sources = {}
-    endif
     let l:refresh_pattern = get(b:, 'asyncomplete_refresh_pattern', '\(\k\+$\)')
     let [l:_, l:startidx, l:endidx] = asyncomplete#utils#matchstrpos(l:ctx['typed'], l:refresh_pattern)
 
@@ -281,9 +263,7 @@ function! s:on_change() abort
         " match sources based on the last character if it is a trigger character
         " TODO: also check for multiple chars instead of just last chars for
         " languages such as cpp which uses -> and ::
-        if has_key(l:triggered_sources, l:source_name)
-            let l:startcol = l:ctx['col']
-        elseif l:startidx > -1
+        if l:startidx > -1
             let l:startcol = l:startidx + 1 " col is 1-indexed, but str 0-indexed
         endif
         " here we use the existence of `l:startcol` to determine whether to
@@ -292,7 +272,7 @@ function! s:on_change() abort
         " meaningful starting point for the current source, and this implies
         " that we cannot use this source for completion. Therefore, we remove
         " the matches from the source.
-        if exists('l:startcol') && l:endidx - l:startidx >= s:get_min_chars(l:source_name)
+        if exists('l:startcol') && l:endidx - l:startidx >= 1 " minimum no of characters typed or behind the cursor is 1
             if !has_key(s:matches, l:source_name) || s:matches[l:source_name]['ctx']['lnum'] !=# l:ctx['lnum'] || s:matches[l:source_name]['startcol'] !=# l:startcol
                 let s:matches[l:source_name] = { 'startcol': l:startcol, 'status': 'idle', 'items': [], 'refresh': 0, 'ctx': l:ctx }
             endif
@@ -310,12 +290,10 @@ endfunction
 function! s:trigger(ctx) abort
     " send cancellation request if supported
     for [l:source_name, l:matches] in items(s:matches)
-        call asyncomplete#log('core', 's:trigger', l:matches)
         if l:matches['refresh'] || l:matches['status'] ==# 'idle' || l:matches['status'] ==# 'failure'
             let l:matches['status'] = 'pending'
             try
                 " TODO: check for min chars
-                call asyncomplete#log('core', 's:trigger.completor()', l:source_name, s:matches[l:source_name], a:ctx)
                 call s:sources[l:source_name].completor(s:sources[l:source_name], a:ctx)
             catch
                 let l:matches['status'] = 'failure'
@@ -330,12 +308,10 @@ function! asyncomplete#complete(name, ctx, startcol, items, ...) abort
     let l:refresh = a:0 > 0 ? a:1 : 0
     let l:ctx = asyncomplete#context()
     if !has_key(s:matches, a:name) || l:ctx['lnum'] != a:ctx['lnum'] " TODO: handle more context changes
-        call asyncomplete#log('core', 'asyncomplete#log', 'ignoring due to context chnages', a:name, a:ctx, a:startcol, l:refresh, a:items)
+        " ignoring due to context chnages
         call s:recompute_pum()
         return
     endif
-
-    call asyncomplete#log('asyncomplete#complete', a:name, a:ctx, a:startcol, l:refresh, a:items)
 
     let l:matches = s:matches[a:name]
     let l:matches['items'] = a:items
@@ -351,7 +327,7 @@ function! asyncomplete#force_refresh() abort
 endfunction
 
 function! asyncomplete#_force_refresh() abort
-    if s:should_skip() | return | endif
+    if mode() isnot# 'i' || !get(b:, 'asyncomplete_enable', 0) | return | endif
 
     let l:ctx = asyncomplete#context()
     let l:startcol = l:ctx['col']
@@ -380,8 +356,6 @@ function! s:recompute_pum(...) abort
     " TODO: add support for remote recomputation of complete items,
     " Ex: heavy computation such as fuzzy search can happen in a python thread
 
-    call asyncomplete#log('core', 's:recompute_pum')
-
     if asyncomplete#menu_selected()
         call asyncomplete#log('core', 's:recomputed_pum', 'ignorning refresh pum due to menu selection')
         return
@@ -395,12 +369,12 @@ function! s:recompute_pum(...) abort
     for [l:source_name, l:match] in items(s:matches)
         " ignore sources that have been unregistered
         if !has_key(s:sources, l:source_name) | continue | endif
+
         let l:startcol = l:match['startcol']
         let l:startcols += [l:startcol]
         let l:curitems = l:match['items']
 
         if l:startcol > l:ctx['col']
-            call asyncomplete#log('core', 's:recompute_pum', 'ignoring due to wrong start col', l:startcol, l:ctx['col'])
             continue
         else
             let l:matches_to_filter[l:source_name] = l:match
@@ -417,15 +391,9 @@ function! s:recompute_pum(...) abort
 
     let l:mode = s:has_complete_info ? complete_info(['mode'])['mode'] : 'unknown'
     if l:mode ==# '' || l:mode ==# 'eval' || l:mode ==# 'unknown'
-        let l:Preprocessor = empty(g:asyncomplete_preprocessor) ? function('s:default_preprocessor') : g:asyncomplete_preprocessor[0]
-        call l:Preprocessor(l:filter_ctx, l:matches_to_filter)
+        call s:default_preprocessor(l:filter_ctx, l:matches_to_filter)
     endif
 endfunction
-
-let s:pair = {
-\  '"':  '"',
-\  '''':  '''',
-\}
 
 function! s:default_preprocessor(options, matches) abort
     let l:items = []
@@ -433,70 +401,22 @@ function! s:default_preprocessor(options, matches) abort
     for [l:source_name, l:matches] in items(a:matches)
         let l:startcol = l:matches['startcol']
         let l:base = a:options['typed'][l:startcol - 1:]
-        if has_key(s:sources[l:source_name], 'filter')
-            let l:result = s:sources[l:source_name].filter(l:matches, l:startcol, l:base)
-            let l:items += l:result[0]
-            let l:startcols += l:result[1]
-        else
-            if empty(l:base)
-                for l:item in l:matches['items']
-                    call add(l:items, s:strip_pair_characters(l:base, l:item))
-                    let l:startcols += [l:startcol]
-                endfor
-            elseif s:has_matchfuzzypos && g:asyncomplete_matchfuzzy
-                for l:item in matchfuzzypos(l:matches['items'], l:base, {'key':'word'})[0]
-                    call add(l:items, s:strip_pair_characters(l:base, l:item))
-                    let l:startcols += [l:startcol]
-                endfor
-            else
-                for l:item in l:matches['items']
-                    if stridx(l:item['word'], l:base) == 0
-                        call add(l:items, s:strip_pair_characters(l:base, l:item))
-                        let l:startcols += [l:startcol]
-                    endif
-                endfor
-            endif
-        endif
+        for l:item in matchfuzzypos(l:matches['items'], l:base, {'key':'word'})[0]
+            call add(l:items, l:item)
+            let l:startcols += [l:startcol]
+        endfor
     endfor
 
-    let a:options['startcol'] = min(l:startcols)
-
-    call asyncomplete#preprocess_complete(a:options, l:items)
-endfunction
-
-function! s:strip_pair_characters(base, item) abort
-    " Strip pair characters. If pre-typed text is '"', candidates
-    " should have '"' suffix.
-    let l:item = a:item
-    if has_key(s:pair, a:base[0])
-        let [l:lhs, l:rhs, l:str] = [a:base[0], s:pair[a:base[0]], l:item['word']]
-        if len(l:str) > 1 && l:str[0] ==# l:lhs && l:str[-1:] ==# l:rhs
-            let l:item = extend({}, l:item)
-            let l:item['word'] = l:str[:-2]
-        endif
-    endif
-    return l:item
-endfunction
-
-function! asyncomplete#preprocess_complete(ctx, items) abort
-    " TODO: handle cases where this is called asynchronsouly. Currently not supported
     if s:should_skip() | return | endif
-
-    call asyncomplete#log('core', 'asyncomplete#preprocess_complete')
 
     if asyncomplete#menu_selected()
         call asyncomplete#log('core', 'asyncomplete#preprocess_complete', 'ignorning pum update due to menu selection')
         return
     endif
 
-    if (g:asyncomplete_auto_completeopt == 1)
-        setl completeopt=menuone,noinsert,noselect
-    endif
-
-    let l:startcol = a:ctx['startcol']
-    call asyncomplete#log('core', 'asyncomplete#preprocess_complete calling complete()', l:startcol, a:items)
+    let l:startcol = min(l:startcols)
     if l:startcol > 0 " Prevent E578: Not allowed to change text here
-        call complete(l:startcol, a:items)
+        call complete(l:startcol, l:items)
     endif
 endfunction
 
