@@ -235,14 +235,6 @@ function! s:update_trigger_characters() abort
     call asyncomplete#log('core', 'trigger characters for buffer', bufnr('%'), b:asyncomplete_triggers)
 endfunction
 
-function! s:should_skip() abort
-    if mode() isnot# 'i' || !get(b:, 'asyncomplete_enable', 0)
-        return 1
-    else
-        return 0
-    endif
-endfunction
-
 function! asyncomplete#close_popup() abort
   return pumvisible() ? "\<C-y>" : ''
 endfunction
@@ -256,8 +248,9 @@ function! s:on_change() abort
 
     let l:ctx = asyncomplete#context()
     let l:last_char = l:ctx['typed'][l:ctx['col'] - 2] " col is 1-indexed, but str 0-indexed
-    let l:refresh_pattern = get(b:, 'asyncomplete_refresh_pattern', '\(\k\+$\)')
-    let [l:_, l:startidx, l:endidx] = asyncomplete#utils#matchstrpos(l:ctx['typed'], l:refresh_pattern)
+
+    " The last function argument is refresh pattern
+    let [l:_, l:startidx, l:endidx] = matchstrpos(l:ctx['typed'], '\(\k\+$\)')
 
     for l:source_name in get(b:, 'asyncomplete_active_sources', [])
         " match sources based on the last character if it is a trigger character
@@ -351,7 +344,7 @@ function! asyncomplete#_force_refresh() abort
 endfunction
 
 function! s:recompute_pum(...) abort
-    if s:should_skip() | return | endif
+    if mode() isnot# 'i' || !get(b:, 'asyncomplete_enable', 0) | return | endif
 
     " TODO: add support for remote recomputation of complete items,
     " Ex: heavy computation such as fuzzy search can happen in a python thread
@@ -407,7 +400,7 @@ function! s:default_preprocessor(options, matches) abort
         endfor
     endfor
 
-    if s:should_skip() | return | endif
+    if mode() isnot# 'i' || !get(b:, 'asyncomplete_enable', 0) | return | endif
 
     if asyncomplete#menu_selected()
         call asyncomplete#log('core', 'asyncomplete#preprocess_complete', 'ignorning pum update due to menu selection')
