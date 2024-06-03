@@ -27,8 +27,6 @@ endif
 let s:already_setup = 0
 let s:sources = {}
 let s:matches = {} " { server_name: { incomplete: 1, startcol: 0, items: [], refresh: 0, status: 'idle|pending|success|failure', ctx: ctx } }
-let s:has_complete_info = exists('*complete_info')
-let s:has_matchfuzzypos = exists('*matchfuzzypos')
 
 function! s:setup_if_required() abort
     if !s:already_setup
@@ -344,8 +342,6 @@ function! asyncomplete#_force_refresh() abort
 endfunction
 
 function! s:recompute_pum(...) abort
-    if mode() isnot# 'i' || !get(b:, 'asyncomplete_enable', 0) | return | endif
-
     " TODO: add support for remote recomputation of complete items,
     " Ex: heavy computation such as fuzzy search can happen in a python thread
 
@@ -382,8 +378,8 @@ function! s:recompute_pum(...) abort
         \ 'startcol': l:startcol,
         \ }, l:ctx)
 
-    let l:mode = s:has_complete_info ? complete_info(['mode'])['mode'] : 'unknown'
-    if l:mode ==# '' || l:mode ==# 'eval' || l:mode ==# 'unknown'
+    let l:mode = complete_info(['mode'])['mode']
+    if l:mode ==# '' || l:mode ==# 'eval'
         call s:default_preprocessor(l:filter_ctx, l:matches_to_filter)
     endif
 endfunction
