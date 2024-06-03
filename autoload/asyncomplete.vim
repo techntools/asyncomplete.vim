@@ -245,6 +245,11 @@ function! s:on_change() abort
     if mode() isnot# 'i' || !get(b:, 'asyncomplete_enable', 0) | return | endif
 
     let l:ctx = asyncomplete#context()
+
+    if l:ctx['typed'] == ''
+        return
+    endif
+
     let l:last_char = l:ctx['typed'][l:ctx['col'] - 2] " col is 1-indexed, but str 0-indexed
 
     " The last function argument is refresh pattern
