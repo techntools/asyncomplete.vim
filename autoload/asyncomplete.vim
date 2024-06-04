@@ -395,7 +395,7 @@ function! s:default_preprocessor(options, matches) abort
     for [l:source_name, l:matches] in items(a:matches)
         let l:startcol = l:matches['startcol']
         let l:base = a:options['typed'][l:startcol - 1:]
-        for l:item in matchfuzzypos(l:matches['items'], l:base, {'key':'word'})[0]
+        for l:item in matchfuzzypos(l:matches['items'], l:base)[0]
             call add(l:items, l:item)
             let l:startcols += [l:startcol]
         endfor
